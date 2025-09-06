@@ -19,7 +19,7 @@
 在使用这个工具之前，请确保你的电脑已经安装了：
 
 ### 必需软件
-1. **Python 3.11+** - [下载地址](https://www.python.org/downloads/)
+1. **Python 3.12+** - [下载地址](https://www.python.org/downloads/)
 2. **Git** - [下载地址](https://git-scm.com/downloads)
 3. **Conda** - [Anaconda](https://www.anaconda.com/products/distribution) 或 [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 
@@ -288,7 +288,7 @@ python src/panda_server/main.py
 - 更新conda：`conda update conda`
 - 更新pip：`pip install --upgrade pip`
 - 使用国内pip源
-- 确保Python版本为3.11+
+- 确保Python版本为3.12+
 
 ### Q: 权限不足
 **A:** 尝试以管理员身份运行工具，或选择用户有写权限的目录。
