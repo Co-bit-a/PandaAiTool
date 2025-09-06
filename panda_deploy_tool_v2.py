@@ -689,44 +689,166 @@ class PandaDeployToolV2:
     
     def check_git_updates(self):
         """检查Git更新"""
-        project_path = self.project_path_var.get()
-        if not project_path or not os.path.exists(project_path):
+        # 获取基础安装路径
+        base_path = self.project_status.get_status("project_path")
+        if not base_path:
+            base_path = self.project_path_var.get()
+        
+        if not base_path or not os.path.exists(base_path):
             messagebox.showerror("错误", "项目路径不存在")
             return
         
+        # 实际的Git仓库路径应该是 base_path/panda_factor
+        panda_factor_path = os.path.join(base_path, "panda_factor")
+        
+        if not os.path.exists(panda_factor_path):
+            messagebox.showerror("错误", f"PandaFactor项目目录不存在: {panda_factor_path}")
+            return
+        
+        # 检查是否是Git仓库
+        git_dir = os.path.join(panda_factor_path, ".git")
+        if not os.path.exists(git_dir):
+            messagebox.showerror("错误", f"目录不是Git仓库: {panda_factor_path}")
+            return
+        
         self.log_deploy("检查Git更新...")
+        self.log_deploy(f"检查路径: {panda_factor_path}")
         
         def check_updates():
             try:
                 # 获取远程更新
-                result = subprocess.run(['git', 'fetch'], cwd=project_path, capture_output=True, text=True)
+                self.root.after(0, lambda: self.log_deploy("正在获取远程更新..."))
+                result = subprocess.run(['git', 'fetch'], cwd=panda_factor_path, capture_output=True, text=True)
                 if result.returncode != 0:
                     error_msg = f"获取远程更新失败: {result.stderr}"
                     self.root.after(0, lambda: self.log_deploy(error_msg))
                     return
                 
                 # 检查是否有更新
-                result = subprocess.run(['git', 'status', '-uno'], cwd=project_path, capture_output=True, text=True)
+                self.root.after(0, lambda: self.log_deploy("检查本地与远程版本差异..."))
+                result = subprocess.run(['git', 'status', '-uno'], cwd=panda_factor_path, capture_output=True, text=True)
                 if "behind" in result.stdout:
                     self.root.after(0, lambda: self.log_deploy("发现新版本，可以更新"))
                     # 获取最新提交信息
                     result = subprocess.run(['git', 'log', 'HEAD..origin/main', '--oneline'], 
-                                          cwd=project_path, capture_output=True, text=True)
+                                          cwd=panda_factor_path, capture_output=True, text=True)
                     if result.stdout:
                         update_content = f"更新内容:\n{result.stdout}"
                         self.root.after(0, lambda: self.log_deploy(update_content))
                 else:
                     self.root.after(0, lambda: self.log_deploy("项目已是最新版本"))
                 
-                # 获取当前提交
-                result = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=project_path, capture_output=True, text=True)
+                # 获取当前提交信息并更新状态
+                self.root.after(0, lambda: self.log_deploy("获取当前版本信息..."))
+                result = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=panda_factor_path, capture_output=True, text=True)
                 if result.returncode == 0:
                     commit = result.stdout.strip()
-                    self.project_status.update_status(git_commit=commit)
+                    # 获取提交的简短描述
+                    desc_result = subprocess.run(['git', 'log', '-1', '--oneline'], cwd=panda_factor_path, capture_output=True, text=True)
+                    commit_desc = desc_result.stdout.strip() if desc_result.returncode == 0 else "未知"
+                    
+                    # 更新项目状态
+                    self.project_status.update_status(
+                        git_commit=commit,
+                        project_path=base_path,  # 确保路径被保存
+                        last_update=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                    
+                    self.root.after(0, lambda: self.log_deploy(f"✅ 当前版本: {commit[:8]} - {commit_desc}"))
+                    self.root.after(0, lambda: self.log_deploy("✅ 项目状态已更新到 project_status.json"))
+                    
+                    # 刷新UI显示
+                    self.root.after(0, self.create_project_info)
+                else:
+                    self.root.after(0, lambda: self.log_deploy("⚠️ 无法获取当前版本信息"))
+                
+                # 同时检查QuantFlow的更新（如果存在）
+                panda_quantflow_path = os.path.join(base_path, "panda_quantflow")
+                if os.path.exists(panda_quantflow_path) and os.path.exists(os.path.join(panda_quantflow_path, ".git")):
+                    self.root.after(0, lambda: self.log_deploy("检查QuantFlow更新..."))
+                    
+                    # 获取QuantFlow远程更新
+                    result = subprocess.run(['git', 'fetch'], cwd=panda_quantflow_path, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        # 检查QuantFlow是否有更新
+                        status_result = subprocess.run(['git', 'status', '-uno'], cwd=panda_quantflow_path, capture_output=True, text=True)
+                        if "behind" in status_result.stdout:
+                            self.root.after(0, lambda: self.log_deploy("📦 QuantFlow发现新版本"))
+                        else:
+                            self.root.after(0, lambda: self.log_deploy("✅ QuantFlow已是最新版本"))
+                        
+                        # 获取QuantFlow当前提交
+                        result = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=panda_quantflow_path, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            quantflow_commit = result.stdout.strip()
+                            # 获取提交描述
+                            desc_result = subprocess.run(['git', 'log', '-1', '--oneline'], cwd=panda_quantflow_path, capture_output=True, text=True)
+                            quantflow_desc = desc_result.stdout.strip() if desc_result.returncode == 0 else "未知"
+                            
+                            self.project_status.update_status(quantflow_commit=quantflow_commit)
+                            self.root.after(0, lambda: self.log_deploy(f"✅ QuantFlow版本: {quantflow_commit[:8]} - {quantflow_desc}"))
+                    else:
+                        self.root.after(0, lambda: self.log_deploy("⚠️ QuantFlow更新检查失败"))
+                else:
+                    self.root.after(0, lambda: self.log_deploy("ℹ️ 未找到QuantFlow项目，跳过检查"))
+                
+                # 检查完成
+                self.root.after(0, lambda: self.log_deploy(""))
+                self.root.after(0, lambda: self.log_deploy("🎉 Git更新检查完成！"))
+                
+                # 智能检查部署状态（不仅检查状态文件，还检查实际项目文件）
+                deployment_status = self.project_status.get_status("deployment_status")
+                
+                # 实际检查项目文件是否存在
+                actual_deployed = False
+                if base_path and os.path.exists(base_path):
+                    factor_path = os.path.join(base_path, "panda_factor")
+                    if os.path.exists(factor_path):
+                        # 检查关键文件
+                        server_path1 = os.path.join(factor_path, "panda_factor_server", "panda_factor_server", "__main__.py")
+                        server_path2 = os.path.join(factor_path, "panda_factor_server", "__main__.py")
+                        if os.path.exists(server_path1) or os.path.exists(server_path2):
+                            actual_deployed = True
+                
+                # 如果实际已部署但状态文件显示未部署，更新状态
+                if actual_deployed and deployment_status != "completed":
+                    self.root.after(0, lambda: self.log_deploy("🔍 检测到项目已手动部署，更新状态..."))
+                    self.project_status.update_status(deployment_status="completed")
+                    deployment_status = "completed"
+                
+                if actual_deployed or deployment_status == "completed":
+                    self.root.after(0, lambda: self.log_deploy("✅ 项目已完成部署，可以直接启动！"))
+                    self.root.after(0, lambda: self.log_deploy("💡 提示：切换到'🚀 项目启动'页面点击'启动项目'按钮"))
+                    
+                    # 提供用户选项
+                    def show_completion_options():
+                        result = messagebox.askyesnocancel(
+                            "检查完成", 
+                            "🎉 Git更新检查完成！\n\n项目已完成部署，你可以选择：\n\n" +
+                            "• 点击'是' - 切换到启动页面\n" +
+                            "• 点击'否' - 继续留在当前页面\n" +
+                            "• 点击'取消' - 直接启动项目",
+                            icon='question'
+                        )
+                        
+                        if result is True:  # 是 - 切换到启动页面
+                            self.notebook.select(1)
+                        elif result is None:  # 取消 - 直接启动项目
+                            self.notebook.select(1)  # 先切换到启动页面
+                            self.root.after(500, self.launch_project)  # 然后启动项目
+                        # result is False - 否 - 什么都不做，留在当前页面
+                    
+                    self.root.after(1000, show_completion_options)  # 延迟1秒后显示选项
+                else:
+                    self.root.after(0, lambda: self.log_deploy("💡 提示：请先完成项目部署，然后再启动服务"))
+                
+                # 刷新状态检查，确保启动按钮可用
+                self.root.after(100, self.check_all_status)
                     
             except Exception as e:
                 error_msg = f"检查更新失败: {str(e)}"
                 self.root.after(0, lambda: self.log_deploy(error_msg))
+                self.root.after(0, lambda: self.log_deploy("❌ 更新检查过程中出现错误"))
         
         thread = threading.Thread(target=check_updates)
         thread.daemon = True

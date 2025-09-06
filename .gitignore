@@ -1,0 +1,5 @@
+build/
+dist/
+project_status.json
+发布说明.md
+清理构建文件.bat
